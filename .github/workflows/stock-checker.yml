@@ -20,7 +20,7 @@ jobs:
           
           # Fetch the product page
           RESPONSE=$(curl -s -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
-            "https://epson.com/Certified-ReNew/All-in-One-Printers/EcoTank-Photo-ET-8550-All-in-One-Wide-format-Supertank-Printer---Certified-ReNew/p/C11CJ21201-N")
+            "https://epson.com/Certified-ReNew/All-in-One-Printers/EcoTank-ET-2850-Wireless-Color-All-in-One-Cartridge-Free-Supertank-Printer-with-Scan%2C-Copy-and-Auto-2-sided-Printing---Certified-ReNew/p/C11CJ63202-N")
           
           echo ""
           echo "=== DEBUG: Checking Specific HTML Elements ==="
