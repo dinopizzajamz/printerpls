@@ -115,85 +115,75 @@ jobs:
             }'
           echo "✅ IN-STOCK Discord notification sent!"
       
-      - name: Calculate if hourly update needed
+      - name: Send Discord Notification (Still Out of Stock)
         if: steps.check.outputs.status == 'out-of-stock'
-        id: hourly
         run: |
-          # Send update every 6 runs (10 min * 6 = hourly)
+          # Calculate if we should send hourly update (every 6 runs)
           RUN_NUM=${{ github.run_number }}
           REMAINDER=$((RUN_NUM % 6))
+          
           if [ $REMAINDER -eq 0 ]; then
-            echo "send=true" >> $GITHUB_OUTPUT
-          else
-            echo "send=false" >> $GITHUB_OUTPUT
-          fi
-      
-      - name: Send Discord Notification (Still Out of Stock)
-        if: steps.check.outputs.status == 'out-of-stock' && steps.hourly.outputs.send == 'true'
-        run: |
-          curl -X POST "${{ secrets.DISCORD_WEBHOOK }}" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "username": "Stock Tracker Bot",
-              "embeds": [{
-                "title": "📊 Hourly Status Update",
-                "description": "Still monitoring - printer is currently out of stock",
-                "color": 15158332,
-                "fields": [
-                  {
-                    "name": "Status",
-                    "value": "Out of Stock ❌",
-                    "inline": true
+            curl -X POST "${{ secrets.DISCORD_WEBHOOK }}" \
+              -H "Content-Type: application/json" \
+              -d '{
+                "username": "Stock Tracker Bot",
+                "embeds": [{
+                  "title": "📊 Hourly Status Update",
+                  "description": "Still monitoring - printer is currently out of stock",
+                  "color": 15158332,
+                  "fields": [
+                    {
+                      "name": "Status",
+                      "value": "Out of Stock ❌",
+                      "inline": true
+                    },
+                    {
+                      "name": "Next Check",
+                      "value": "In 10 minutes",
+                      "inline": true
+                    }
+                  ],
+                  "footer": {
+                    "text": "You will be notified immediately when back in stock"
                   },
-                  {
-                    "name": "Next Check",
-                    "value": "In 10 minutes",
-                    "inline": true
-                  }
-                ],
-                "footer": {
-                  "text": "You will be notified immediately when back in stock"
-                },
-                "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%S.000Z)'"
-              }]
-            }'
-          echo "ℹ️ Hourly update sent to Discord"
-      
-      - name: Calculate if daily alert needed
-        if: steps.check.outputs.status == 'unknown'
-        id: daily
-        run: |
-          # Send alert once per day (144 runs at 10min = 24 hours)
-          RUN_NUM=${{ github.run_number }}
-          REMAINDER=$((RUN_NUM % 144))
-          if [ $REMAINDER -eq 0 ]; then
-            echo "send=true" >> $GITHUB_OUTPUT
+                  "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%S.000Z)'"
+                }]
+              }'
+            echo "ℹ️ Hourly update sent to Discord"
           else
-            echo "send=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ Skipping update (sends every hour to avoid spam)"
           fi
       
       - name: Send Discord Notification (Status Unknown)
-        if: steps.check.outputs.status == 'unknown' && steps.daily.outputs.send == 'true'
+        if: steps.check.outputs.status == 'unknown'
         run: |
-          curl -X POST "${{ secrets.DISCORD_WEBHOOK }}" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "username": "Stock Tracker Bot",
-              "embeds": [{
-                "title": "⚠️ Status Check Warning",
-                "description": "Unable to determine stock status clearly. Website may have changed or be temporarily down.",
-                "color": 16776960,
-                "fields": [
-                  {
-                    "name": "Action Needed",
-                    "value": "Check the [GitHub Actions logs](https://github.com/${{ github.repository }}/actions) for details and download the page-content-debug artifact",
-                    "inline": false
-                  }
-                ],
-                "footer": {
-                  "text": "Monitoring continues - treating as out of stock for safety"
-                },
-                "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%S.000Z)'"
-              }]
-            }'
-          echo "⚠️ Unknown status alert sent"
+          # Calculate if we should send daily alert (every 144 runs)
+          RUN_NUM=${{ github.run_number }}
+          REMAINDER=$((RUN_NUM % 144))
+          
+          if [ $REMAINDER -eq 0 ]; then
+            curl -X POST "${{ secrets.DISCORD_WEBHOOK }}" \
+              -H "Content-Type: application/json" \
+              -d '{
+                "username": "Stock Tracker Bot",
+                "embeds": [{
+                  "title": "⚠️ Status Check Warning",
+                  "description": "Unable to determine stock status clearly. Website may have changed or be temporarily down.",
+                  "color": 16776960,
+                  "fields": [
+                    {
+                      "name": "Action Needed",
+                      "value": "Check the [GitHub Actions logs](https://github.com/${{ github.repository }}/actions) for details and download the page-content-debug artifact",
+                      "inline": false
+                    }
+                  ],
+                  "footer": {
+                    "text": "Monitoring continues - treating as out of stock for safety"
+                  },
+                  "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%S.000Z)'"
+                }]
+              }'
+            echo "⚠️ Unknown status alert sent"
+          else
+            echo "ℹ️ Skipping unknown status alert (sends once per day)"
+          fi
