@@ -1,38 +1,180 @@
-name: Check Stock Status
+name: Check Epson Printer Stock
 
 on:
   schedule:
-    # Run every 5 minutes (adjust as needed)
-    - cron: '*/5 * * * *'
-  workflow_dispatch: # Allow manual trigger
+    # Run every 10 minutes
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub
 
 jobs:
   check-stock:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Check Epson Stock
+      - name: Check Stock Status
+        id: check
         run: |
-          RESPONSE=$(curl -s "https://epson.com/Certified-ReNew/All-in-One-Printers/EcoTank-Photo-ET-8550-All-in-One-Wide-format-Supertank-Printer---Certified-ReNew/p/C11CJ21201-N")
+          echo "🔍 Checking Epson ET-8550 stock status..."
           
-          if echo "$RESPONSE" | grep -q "Add to Cart\|Buy Now"; then
-            echo "IN STOCK!"
+          # Fetch the product page
+          RESPONSE=$(curl -s -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+            "https://epson.com/Certified-ReNew/All-in-One-Printers/EcoTank-Photo-ET-8550-All-in-One-Wide-format-Supertank-Printer---Certified-ReNew/p/C11CJ21201-N")
+          
+          # Debug: Save response to artifact for troubleshooting
+          echo "$RESPONSE" > page_content.txt
+          
+          # Check stock status with multiple indicators
+          # The page shows "Out of Stock" text and disabled "Buy Now" button when unavailable
+          
+          if echo "$RESPONSE" | grep -q "Out of Stock"; then
+            echo "❌ Product is OUT OF STOCK (found 'Out of Stock' text)"
+            echo "status=out-of-stock" >> $GITHUB_OUTPUT
             
-            # Send Discord notification
+          elif echo "$RESPONSE" | grep -q 'Buy Now.*disabled\|disabled.*Buy Now'; then
+            echo "❌ Product is OUT OF STOCK (Buy Now button is disabled)"
+            echo "status=out-of-stock" >> $GITHUB_OUTPUT
+            
+          elif echo "$RESPONSE" | grep -q "Error While Adding"; then
+            echo "❌ Product is OUT OF STOCK (Error While Adding indicator)"
+            echo "status=out-of-stock" >> $GITHUB_OUTPUT
+            
+          elif echo "$RESPONSE" | grep -iq "Add to Cart\|Buy Now" && ! echo "$RESPONSE" | grep -q "Out of Stock"; then
+            # Only mark as in-stock if we see purchase buttons AND no out-of-stock text
+            echo "✅ Product appears to be IN STOCK!"
+            echo "status=in-stock" >> $GITHUB_OUTPUT
+            
+          else
+            echo "⚠️ Unable to determine status clearly - treating as out of stock to avoid false positives"
+            echo "status=unknown" >> $GITHUB_OUTPUT
+          fi
+          
+          # Show what we found for debugging
+          echo ""
+          echo "=== Key Indicators Found ==="
+          echo "Out of Stock text: $(echo "$RESPONSE" | grep -c "Out of Stock")"
+          echo "Buy Now button: $(echo "$RESPONSE" | grep -c "Buy Now")"
+          echo "Add to Cart: $(echo "$RESPONSE" | grep -c "Add to Cart")"
+          echo "Error While Adding: $(echo "$RESPONSE" | grep -c "Error While Adding")"
+      
+      - name: Upload Debug Info
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: page-content-debug
+          path: page_content.txt
+          retention-days: 1
+      
+      - name: Send Discord Notification (In Stock!)
+        if: steps.check.outputs.status == 'in-stock'
+        run: |
+          curl -X POST "${{ secrets.DISCORD_WEBHOOK }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "username": "Stock Tracker Bot",
+              "avatar_url": "https://cdn-icons-png.flaticon.com/512/2921/2921222.png",
+              "content": "@everyone 🚨 **PRINTER ALERT** 🚨",
+              "embeds": [{
+                "title": "🎉 EPSON PRINTER BACK IN STOCK!",
+                "description": "**The EcoTank ET-8550 is now available for purchase!**\n\n🏃‍♂️ **ACT FAST** - This sells out quickly!",
+                "color": 1096065,
+                "fields": [
+                  {
+                    "name": "📦 Product",
+                    "value": "EcoTank Photo ET-8550 Wide-format Supertank Printer (Certified ReNew)",
+                    "inline": false
+                  },
+                  {
+                    "name": "💰 Price",
+                    "value": "$479.99",
+                    "inline": true
+                  },
+                  {
+                    "name": "⏰ Status",
+                    "value": "**IN STOCK NOW** ✅",
+                    "inline": true
+                  },
+                  {
+                    "name": "🔗 Purchase Link",
+                    "value": "[**>>> CLICK HERE TO BUY NOW <<<**](https://epson.com/Certified-ReNew/All-in-One-Printers/EcoTank-Photo-ET-8550-All-in-One-Wide-format-Supertank-Printer---Certified-ReNew/p/C11CJ21201-N)",
+                    "inline": false
+                  }
+                ],
+                "thumbnail": {
+                  "url": "https://cdn-icons-png.flaticon.com/512/2921/2921222.png"
+                },
+                "footer": {
+                  "text": "Stock Tracker • Checked every 10 minutes"
+                },
+                "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%S.000Z)'"
+              }]
+            }'
+          echo "✅ IN-STOCK Discord notification sent!"
+      
+      - name: Send Discord Notification (Still Out of Stock)
+        if: steps.check.outputs.status == 'out-of-stock'
+        env:
+          # Send hourly updates (every 6 runs at 10min intervals = 1 hour)
+          SEND_UPDATE: ${{ github.run_number % 6 == 0 }}
+        run: |
+          if [ "$SEND_UPDATE" = "true" ]; then
             curl -X POST "${{ secrets.DISCORD_WEBHOOK }}" \
               -H "Content-Type: application/json" \
               -d '{
+                "username": "Stock Tracker Bot",
                 "embeds": [{
-                  "title": "🖨️ EPSON PRINTER IN STOCK!",
-                  "description": "The EcoTank ET-8550 is now available!",
-                  "color": 1096065,
+                  "title": "📊 Hourly Status Update",
+                  "description": "Still monitoring - printer is currently out of stock",
+                  "color": 15158332,
                   "fields": [
-                    {"name": "Product", "value": "EcoTank Photo ET-8550", "inline": true},
-                    {"name": "Price", "value": "$479.99", "inline": true},
-                    {"name": "Link", "value": "[Buy Now](https://epson.com/Certified-ReNew/All-in-One-Printers/EcoTank-Photo-ET-8550-All-in-One-Wide-format-Supertank-Printer---Certified-ReNew/p/C11CJ21201-N)"}
-                  ]
+                    {
+                      "name": "Status",
+                      "value": "Out of Stock ❌",
+                      "inline": true
+                    },
+                    {
+                      "name": "Next Check",
+                      "value": "In 10 minutes",
+                      "inline": true
+                    }
+                  ],
+                  "footer": {
+                    "text": "You will be notified immediately when back in stock"
+                  },
+                  "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%S.000Z)'"
                 }]
               }'
+            echo "ℹ️ Hourly update sent to Discord"
           else
-            echo "Still out of stock"
+            echo "ℹ️ Skipping update (sends every hour to avoid spam)"
+          fi
+      
+      - name: Send Discord Notification (Status Unknown)
+        if: steps.check.outputs.status == 'unknown'
+        env:
+          # Only send unknown status once per day (144 runs at 10min intervals = 24 hours)
+          SEND_ALERT: ${{ github.run_number % 144 == 0 }}
+        run: |
+          if [ "$SEND_ALERT" = "true" ]; then
+            curl -X POST "${{ secrets.DISCORD_WEBHOOK }}" \
+              -H "Content-Type: application/json" \
+              -d '{
+                "username": "Stock Tracker Bot",
+                "embeds": [{
+                  "title": "⚠️ Status Check Warning",
+                  "description": "Unable to determine stock status clearly. Website may have changed or be temporarily down.",
+                  "color": 16776960,
+                  "fields": [
+                    {
+                      "name": "Action Needed",
+                      "value": "Check the [GitHub Actions logs](https://github.com/${{ github.repository }}/actions) for details",
+                      "inline": false
+                    }
+                  ],
+                  "footer": {
+                    "text": "Monitoring continues - treating as out of stock for safety"
+                  },
+                  "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%S.000Z)'"
+                }]
+              }'
+            echo "⚠️ Unknown status alert sent"
           fi
