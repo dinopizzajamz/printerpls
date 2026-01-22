@@ -20,41 +20,46 @@ jobs:
           RESPONSE=$(curl -s -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
             "https://epson.com/Certified-ReNew/All-in-One-Printers/EcoTank-Photo-ET-8550-All-in-One-Wide-format-Supertank-Printer---Certified-ReNew/p/C11CJ21201-N")
           
-          # Debug: Save response to artifact for troubleshooting
+          # Save response for debugging
           echo "$RESPONSE" > page_content.txt
           
-          # Check stock status with multiple indicators
-          # The page shows "Out of Stock" text and disabled "Buy Now" button when unavailable
+          # PRECISE CHECK: Look for the exact HTML structure you found
+          # Out of stock: <div class="pull-right promo-bug visible-md visible-lg out">Out of Stock</div>
+          # In stock: <div class="pull-right promo-bug visible-md visible-lg refurbished">Certified ReNew</div>
           
-          if echo "$RESPONSE" | grep -q "Out of Stock"; then
-            echo "❌ Product is OUT OF STOCK (found 'Out of Stock' text)"
+          if echo "$RESPONSE" | grep -q 'class="pull-right promo-bug visible-md visible-lg out"'; then
+            echo "❌ CONFIRMED OUT OF STOCK - Found the 'out' class in promo-bug div"
             echo "status=out-of-stock" >> $GITHUB_OUTPUT
             
-          elif echo "$RESPONSE" | grep -q 'Buy Now.*disabled\|disabled.*Buy Now'; then
-            echo "❌ Product is OUT OF STOCK (Buy Now button is disabled)"
+          elif echo "$RESPONSE" | grep -q 'visible-lg out.*Out of Stock'; then
+            echo "❌ CONFIRMED OUT OF STOCK - Found 'visible-lg out' with 'Out of Stock' text"
             echo "status=out-of-stock" >> $GITHUB_OUTPUT
             
-          elif echo "$RESPONSE" | grep -q "Error While Adding"; then
-            echo "❌ Product is OUT OF STOCK (Error While Adding indicator)"
-            echo "status=out-of-stock" >> $GITHUB_OUTPUT
-            
-          elif echo "$RESPONSE" | grep -iq "Add to Cart\|Buy Now" && ! echo "$RESPONSE" | grep -q "Out of Stock"; then
-            # Only mark as in-stock if we see purchase buttons AND no out-of-stock text
-            echo "✅ Product appears to be IN STOCK!"
+          elif echo "$RESPONSE" | grep -q 'class="pull-right promo-bug visible-md visible-lg refurbished"'; then
+            echo "✅ CONFIRMED IN STOCK - Found the 'refurbished' class (not 'out')"
             echo "status=in-stock" >> $GITHUB_OUTPUT
             
+          elif echo "$RESPONSE" | grep -q '>Out of Stock</div>'; then
+            echo "❌ OUT OF STOCK - Found 'Out of Stock' closing div tag"
+            echo "status=out-of-stock" >> $GITHUB_OUTPUT
+            
           else
-            echo "⚠️ Unable to determine status clearly - treating as out of stock to avoid false positives"
+            echo "⚠️ Unable to find expected HTML structure - treating as out of stock"
             echo "status=unknown" >> $GITHUB_OUTPUT
           fi
           
-          # Show what we found for debugging
+          # Detailed debugging
           echo ""
-          echo "=== Key Indicators Found ==="
-          echo "Out of Stock text: $(echo "$RESPONSE" | grep -c "Out of Stock")"
-          echo "Buy Now button: $(echo "$RESPONSE" | grep -c "Buy Now")"
-          echo "Add to Cart: $(echo "$RESPONSE" | grep -c "Add to Cart")"
-          echo "Error While Adding: $(echo "$RESPONSE" | grep -c "Error While Adding")"
+          echo "=== DEBUG: Checking Specific HTML Elements ==="
+          echo "Found 'out' class: $(echo "$RESPONSE" | grep -c 'visible-lg out')"
+          echo "Found 'refurbished' class: $(echo "$RESPONSE" | grep -c 'visible-lg refurbished')"
+          echo "Found 'Out of Stock' text: $(echo "$RESPONSE" | grep -c '>Out of Stock<')"
+          echo "Found 'Certified ReNew' text: $(echo "$RESPONSE" | grep -c '>Certified ReNew<')"
+          
+          # Show the actual promo-bug div if found
+          echo ""
+          echo "=== Promo Bug Div Content ==="
+          echo "$RESPONSE" | grep -o 'class="pull-right promo-bug[^>]*>[^<]*' || echo "Not found"
       
       - name: Upload Debug Info
         if: always()
@@ -181,7 +186,7 @@ jobs:
                 "fields": [
                   {
                     "name": "Action Needed",
-                    "value": "Check the [GitHub Actions logs](https://github.com/${{ github.repository }}/actions) for details",
+                    "value": "Check the [GitHub Actions logs](https://github.com/${{ github.repository }}/actions) for details and download the page-content-debug artifact",
                     "inline": false
                   }
                 ],
