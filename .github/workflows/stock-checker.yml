@@ -19,7 +19,7 @@ jobs:
           
           # Fetch the product page
           RESPONSE=$(curl -s -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
-            "https://epson.com/Certified-ReNew/All-in-One-Printers/EcoTank-Photo-ET-8550-All-in-One-Wide-format-Supertank-Printer---Certified-ReNew/p/C11CJ21201-N")
+            "https://epson.com/Certified-ReNew/All-in-One-Printers/EcoTank-ET-3850-Wireless-Color-All-in-One-Cartridge-Free-Supertank-Printer-with-Scanner%2C-Copier%2C-ADF-and-Ethernet---Certified-ReNew/p/C11CJ61201-N")
           
           # Save response for debugging
           echo "$RESPONSE" > page_content.txt
