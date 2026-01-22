@@ -1,0 +1,38 @@
+name: Check Stock Status
+
+on:
+  schedule:
+    # Run every 5 minutes (adjust as needed)
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  check-stock:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Check Epson Stock
+        run: |
+          RESPONSE=$(curl -s "https://epson.com/Certified-ReNew/All-in-One-Printers/EcoTank-Photo-ET-8550-All-in-One-Wide-format-Supertank-Printer---Certified-ReNew/p/C11CJ21201-N")
+          
+          if echo "$RESPONSE" | grep -q "Add to Cart\|Buy Now"; then
+            echo "IN STOCK!"
+            
+            # Send Discord notification
+            curl -X POST "${{ secrets.DISCORD_WEBHOOK }}" \
+              -H "Content-Type: application/json" \
+              -d '{
+                "embeds": [{
+                  "title": "🖨️ EPSON PRINTER IN STOCK!",
+                  "description": "The EcoTank ET-8550 is now available!",
+                  "color": 1096065,
+                  "fields": [
+                    {"name": "Product", "value": "EcoTank Photo ET-8550", "inline": true},
+                    {"name": "Price", "value": "$479.99", "inline": true},
+                    {"name": "Link", "value": "[Buy Now](https://epson.com/Certified-ReNew/All-in-One-Printers/EcoTank-Photo-ET-8550-All-in-One-Wide-format-Supertank-Printer---Certified-ReNew/p/C11CJ21201-N)"}
+                  ]
+                }]
+              }'
+          else
+            echo "Still out of stock"
+          fi
