@@ -106,9 +106,9 @@ jobs:
       - name: Send Discord Notification (Out of Stock - Hourly)
         if: steps.check.outputs.status == 'out-of-stock'
         run: |
-          # Calculate if we should send hourly update (every 6 runs)
+          # Calculate if we should send hourly update (every 12 runs)
           RUN_NUM=${{ github.run_number }}
-          REMAINDER=$((RUN_NUM % 6))
+          REMAINDER=$((RUN_NUM % 12))
           
           if [ $REMAINDER -eq 0 ]; then
             echo "📢 Sending hourly OUT OF STOCK update to Discord..."
