@@ -63,7 +63,7 @@ jobs:
       
       - name: Upload Debug Info
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: page-content-debug
           path: page_content.txt
