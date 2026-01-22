@@ -1,15 +1,17 @@
 name: Check Epson Printer Stock
 
 on:
+  push:
+    branches: [main]
   schedule:
     # Run every 10 minutes
     - cron: '*/10 * * * *'
-  workflow_dispatch: # Allows manual trigger from GitHub
+workflow_dispatch: # Allows manual trigger from GitHub
 
 jobs:
   check-stock:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Check Stock Status
         id: check
