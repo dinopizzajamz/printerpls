@@ -125,7 +125,7 @@ jobs:
         run: |
           # Calculate if we should send hourly update (every 6 runs)
           RUN_NUM=${{ github.run_number }}
-          REMAINDER=$((RUN_NUM % 6))
+          REMAINDER=$((RUN_NUM % 12))
           
           if [ $REMAINDER -eq 0 ]; then
             curl -X POST "${{ secrets.DISCORD_WEBHOOK }}" \
