@@ -1,9 +1,8 @@
 name: Check Epson Printer Stock
 
 on:
-  push:
-    branches: [main]
   schedule:
+    # Run every 10 minutes
     - cron: '*/10 * * * *'
   workflow_dispatch: # Allows manual trigger from GitHub
 
@@ -21,58 +20,44 @@ jobs:
           RESPONSE=$(curl -s -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
             "https://epson.com/Certified-ReNew/All-in-One-Printers/EcoTank-Photo-ET-8550-All-in-One-Wide-format-Supertank-Printer---Certified-ReNew/p/C11CJ21201-N")
           
-          # Save response for debugging
-          echo "$RESPONSE" > page_content.txt
+          echo ""
+          echo "=== DEBUG: Checking Specific HTML Elements ==="
+          echo "Found 'visible-lg out' class: $(echo "$RESPONSE" | grep -c 'visible-lg out')"
+          echo "Found 'visible-lg refurbished' class: $(echo "$RESPONSE" | grep -c 'visible-lg refurbished')"
+          echo "Found 'Out of Stock' text: $(echo "$RESPONSE" | grep -c '>Out of Stock<')"
+          echo "Found 'Certified ReNew' in promo: $(echo "$RESPONSE" | grep -c 'promo-bug.*Certified ReNew')"
+          
+          echo ""
+          echo "=== Looking for promo-bug div ==="
+          echo "$RESPONSE" | grep -o 'class="pull-right promo-bug[^>]*>[^<]*' | head -5
+          
+          echo ""
+          echo "=== STOCK DETECTION LOGIC ==="
           
           # PRECISE CHECK: Look for the exact HTML structure you found
           # Out of stock: <div class="pull-right promo-bug visible-md visible-lg out">Out of Stock</div>
           # In stock: <div class="pull-right promo-bug visible-md visible-lg refurbished">Certified ReNew</div>
           
-          if echo "$RESPONSE" | grep -q 'class="pull-right promo-bug visible-md visible-lg out"'; then
-            echo "❌ CONFIRMED OUT OF STOCK - Found the 'out' class in promo-bug div"
+          if echo "$RESPONSE" | grep -q 'visible-lg out'; then
+            echo "✅ DETECTION: Found 'visible-lg out' class - This is OUT OF STOCK"
             echo "status=out-of-stock" >> $GITHUB_OUTPUT
             
-          elif echo "$RESPONSE" | grep -q 'visible-lg out.*Out of Stock'; then
-            echo "❌ CONFIRMED OUT OF STOCK - Found 'visible-lg out' with 'Out of Stock' text"
-            echo "status=out-of-stock" >> $GITHUB_OUTPUT
-            
-          elif echo "$RESPONSE" | grep -q 'class="pull-right promo-bug visible-md visible-lg refurbished"'; then
-            echo "✅ CONFIRMED IN STOCK - Found the 'refurbished' class (not 'out')"
+          elif echo "$RESPONSE" | grep -q 'visible-lg refurbished'; then
+            echo "✅ DETECTION: Found 'visible-lg refurbished' class - This is IN STOCK"
             echo "status=in-stock" >> $GITHUB_OUTPUT
             
-          elif echo "$RESPONSE" | grep -q '>Out of Stock</div>'; then
-            echo "❌ OUT OF STOCK - Found 'Out of Stock' closing div tag"
-            echo "status=out-of-stock" >> $GITHUB_OUTPUT
-            
           else
-            echo "⚠️ Unable to find expected HTML structure - treating as out of stock"
-            echo "status=unknown" >> $GITHUB_OUTPUT
+            echo "⚠️ DETECTION: Could not find expected classes - defaulting to OUT OF STOCK"
+            echo "status=out-of-stock" >> $GITHUB_OUTPUT
           fi
           
-          # Detailed debugging
           echo ""
-          echo "=== DEBUG: Checking Specific HTML Elements ==="
-          echo "Found 'out' class: $(echo "$RESPONSE" | grep -c 'visible-lg out')"
-          echo "Found 'refurbished' class: $(echo "$RESPONSE" | grep -c 'visible-lg refurbished')"
-          echo "Found 'Out of Stock' text: $(echo "$RESPONSE" | grep -c '>Out of Stock<')"
-          echo "Found 'Certified ReNew' text: $(echo "$RESPONSE" | grep -c '>Certified ReNew<')"
-          
-          # Show the actual promo-bug div if found
-          echo ""
-          echo "=== Promo Bug Div Content ==="
-          echo "$RESPONSE" | grep -o 'class="pull-right promo-bug[^>]*>[^<]*' || echo "Not found"
-      
-      - name: Upload Debug Info
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: page-content-debug
-          path: page_content.txt
-          retention-days: 1
+          echo "Final status: $(cat $GITHUB_OUTPUT | grep status | cut -d'=' -f2)"
       
       - name: Send Discord Notification (In Stock!)
         if: steps.check.outputs.status == 'in-stock'
         run: |
+          echo "📢 Sending IN STOCK notification to Discord..."
           curl -X POST "${{ secrets.DISCORD_WEBHOOK }}" \
             -H "Content-Type: application/json" \
             -d '{
@@ -114,9 +99,9 @@ jobs:
                 "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%S.000Z)'"
               }]
             }'
-          echo "✅ IN-STOCK Discord notification sent!"
+          echo "✅ Discord notification sent!"
       
-      - name: Send Discord Notification (Still Out of Stock)
+      - name: Send Discord Notification (Out of Stock - Hourly)
         if: steps.check.outputs.status == 'out-of-stock'
         run: |
           # Calculate if we should send hourly update (every 6 runs)
@@ -124,6 +109,7 @@ jobs:
           REMAINDER=$((RUN_NUM % 6))
           
           if [ $REMAINDER -eq 0 ]; then
+            echo "📢 Sending hourly OUT OF STOCK update to Discord..."
             curl -X POST "${{ secrets.DISCORD_WEBHOOK }}" \
               -H "Content-Type: application/json" \
               -d '{
@@ -150,41 +136,7 @@ jobs:
                   "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%S.000Z)'"
                 }]
               }'
-            echo "ℹ️ Hourly update sent to Discord"
+            echo "✅ Hourly update sent"
           else
-            echo "ℹ️ Skipping update (sends every hour to avoid spam)"
-          fi
-      
-      - name: Send Discord Notification (Status Unknown)
-        if: steps.check.outputs.status == 'unknown'
-        run: |
-          # Calculate if we should send daily alert (every 144 runs)
-          RUN_NUM=${{ github.run_number }}
-          REMAINDER=$((RUN_NUM % 144))
-          
-          if [ $REMAINDER -eq 0 ]; then
-            curl -X POST "${{ secrets.DISCORD_WEBHOOK }}" \
-              -H "Content-Type: application/json" \
-              -d '{
-                "username": "Stock Tracker Bot",
-                "embeds": [{
-                  "title": "⚠️ Status Check Warning",
-                  "description": "Unable to determine stock status clearly. Website may have changed or be temporarily down.",
-                  "color": 16776960,
-                  "fields": [
-                    {
-                      "name": "Action Needed",
-                      "value": "Check the [GitHub Actions logs](https://github.com/${{ github.repository }}/actions) for details and download the page-content-debug artifact",
-                      "inline": false
-                    }
-                  ],
-                  "footer": {
-                    "text": "Monitoring continues - treating as out of stock for safety"
-                  },
-                  "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%S.000Z)'"
-                }]
-              }'
-            echo "⚠️ Unknown status alert sent"
-          else
-            echo "ℹ️ Skipping unknown status alert (sends once per day)"
+            echo "ℹ️ Skipping hourly update (run #$RUN_NUM, sends every 6 runs)"
           fi
